@@ -2,105 +2,88 @@
 #include <ESP32Encoder.h>
 #include "Arduino.h"
 
+/*
+  Application:
+  - Interface water flow sensor with ESP32 board.
+  
+  Board:
+  - ESP32 Dev Module
+    https://my.cytron.io/p-node32-lite-wifi-and-bluetooth-development-kit
+  Sensor:
+  - G 1/2 Water Flow Sensor
+    https://my.cytron.io/p-g-1-2-water-flow-sensor
+ */
 
-#if defined(ESP8266)
-#define ROTARY_ENCODER_A_PIN D6
-#define ROTARY_ENCODER_B_PIN D5
-#define ROTARY_ENCODER_BUTTON_PIN D7
-#else
-#define CLK 2 // CLK ENCODER
-#define DT 15 // DT ENCODER
-#define ROTARY_ENCODER_BUTTON_PIN 4
-#endif
-#define ROTARY_ENCODER_VCC_PIN -1 /* 27 put -1 of Rotary encoder Vcc is connected directly to 3,3V; else you can use declared output pin for powering rotary encoder */
+#define LED_BUILTIN 2
+#define SENSOR  5
 
-//depending on your encoder - try 1,2 or 4 to get expected behaviour
-#define ROTARY_ENCODER_STEPS 1
-// #define ROTARY_ENCODER_STEPS 2
-// #define ROTARY_ENCODER_STEPS 4
+long currentMillis = 0;
+long previousMillis = 0;
+int interval = 1000;
+boolean ledState = LOW;
+float calibrationFactor = 4.5;
+volatile byte pulseCount;
+byte pulse1Sec = 0;
+float flowRate;
+unsigned int flowMilliLitres;
+unsigned long totalMilliLitres;
 
-//instead of changing here, rather change numbers above
-// AiEsp32RotaryEncoder rotaryEncoder = AiEsp32RotaryEncoder(ROTARY_ENCODER_A_PIN, ROTARY_ENCODER_B_PIN, ROTARY_ENCODER_BUTTON_PIN, ROTARY_ENCODER_VCC_PIN, ROTARY_ENCODER_STEPS);
-AiEsp32RotaryEncoder rotaryEncoder = AiEsp32RotaryEncoder(NULL, NULL, ROTARY_ENCODER_BUTTON_PIN, ROTARY_ENCODER_VCC_PIN, ROTARY_ENCODER_STEPS);
-ESP32Encoder encoder;
-
-//paramaters for button
-unsigned long shortPressAfterMiliseconds = 50;   //how long short press shoud be. Do not set too low to avoid bouncing (false press events).
-unsigned long longPressAfterMiliseconds = 1000;  //how long čong press shoud be.
-
-void on_button_short_click() {
-  Serial.print("button SHORT press ");
-  Serial.print(millis());
-  Serial.println(" milliseconds after restart");
+void IRAM_ATTR pulseCounter()
+{
+  pulseCount++;
 }
 
-void on_button_long_click() {
-  Serial.print("button LONG press ");
-  Serial.print(millis());
-  Serial.println(" milliseconds after restart");
-}
-
-void handle_rotary_button() {
-  static unsigned long lastTimeButtonDown = 0;
-  static bool wasButtonDown = false;
-
-  bool isEncoderButtonDown = rotaryEncoder.isEncoderButtonDown();
-  //isEncoderButtonDown = !isEncoderButtonDown; //uncomment this line if your button is reversed
-
-  if (isEncoderButtonDown) {
-    Serial.print("+");  //REMOVE THIS LINE IF YOU DONT WANT TO SEE
-    if (!wasButtonDown) {
-      //start measuring
-      lastTimeButtonDown = millis();
-    }
-    //else we wait since button is still down
-    wasButtonDown = true;
-    return;
-  }
-
-  //button is up
-  if (wasButtonDown) {
-    Serial.println("");  //REMOVE THIS LINE IF YOU DONT WANT TO SEE
-    //click happened, lets see if it was short click, long click or just too short
-    if (millis() - lastTimeButtonDown >= longPressAfterMiliseconds) {
-      on_button_long_click();
-    } else if (millis() - lastTimeButtonDown >= shortPressAfterMiliseconds) {
-      on_button_short_click();
-    }
-  }
-  wasButtonDown = false;
-}
-
-
-void rotary_loop() {
-  //dont print anything unless value changed
-  if (rotaryEncoder.encoderChanged()) {
-    Serial.print("Value: ");
-    Serial.println(rotaryEncoder.readEncoder());
-  }
-  handle_rotary_button();
-}
-
-void IRAM_ATTR readEncoderISR() {
-  rotaryEncoder.readEncoder_ISR();
-}
-
-void setup() {
+void setup()
+{
   Serial.begin(9600);
 
-  encoder.attachHalfQuad(DT, CLK);
-  encoder.setCount(0);
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(SENSOR, INPUT_PULLUP);
 
-  //we must initialize rotary encoder
-  rotaryEncoder.begin();
-  rotaryEncoder.setup(readEncoderISR);
-  rotaryEncoder.disableAcceleration(); 
+  pulseCount = 0;
+  flowRate = 0.0;
+  flowMilliLitres = 0;
+  totalMilliLitres = 0;
+  previousMillis = 0;
+
+  attachInterrupt(digitalPinToInterrupt(SENSOR), pulseCounter, FALLING);
 }
 
-void loop() {
-  //in loop call your custom function which will process rotary encoder values
-  rotary_loop();
-  long newPosition = encoder.getCount();
-  Serial.println(newPosition);
-  delay(50);  //or do whatever you need to do...
+void loop()
+{
+  currentMillis = millis();
+  if (currentMillis - previousMillis > interval) {
+    
+    pulse1Sec = pulseCount;
+    pulseCount = 0;
+
+    // Because this loop may not complete in exactly 1 second intervals we calculate
+    // the number of milliseconds that have passed since the last execution and use
+    // that to scale the output. We also apply the calibrationFactor to scale the output
+    // based on the number of pulses per second per units of measure (litres/minute in
+    // this case) coming from the sensor.
+    flowRate = ((1000.0 / (millis() - previousMillis)) * pulse1Sec) / calibrationFactor;
+    previousMillis = millis();
+
+    // Divide the flow rate in litres/minute by 60 to determine how many litres have
+    // passed through the sensor in this 1 second interval, then multiply by 1000 to
+    // convert to millilitres.
+    flowMilliLitres = (flowRate / 60) * 1000;
+
+    // Add the millilitres passed in this second to the cumulative total
+    totalMilliLitres += flowMilliLitres;
+    
+    // Print the flow rate for this second in litres / minute
+    Serial.print("Flow rate: ");
+    Serial.print(int(flowRate));  // Print the integer part of the variable
+    Serial.print("L/min");
+    Serial.print("\t");       // Print tab space
+
+    // Print the cumulative total of litres flowed since starting
+    Serial.print("Output Liquid Quantity: ");
+    Serial.print(totalMilliLitres);
+    Serial.print("mL / ");
+    Serial.print(totalMilliLitres / 1000);
+    Serial.println("L");
+  }
 }
