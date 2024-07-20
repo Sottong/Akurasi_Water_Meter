@@ -6,15 +6,15 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-const char* ssid = "ElisaCom_Kos";
-const char* password = "kosElisa12345";
+const char* ssid = "vivo Y21";
+const char* password = "00000000";
 // const char* ssid = "123";
 // const char* password = "kikikiki";
 // const char* ssid = "Wokwi-GUEST";
 // const char* password = "";
-// const char* scriptUrl = "https://script.google.com/macros/s/AKfycbzUmSDVUN-EwnxzdW_5fiOKLAlZ1HlcBhkuymtfcPMMFZyzFMK-YeKeVLSw3QLQ33U0/exec";
-// const char* scriptUrl = "https://script.google.com/macros/s/AKfycbxx3B0DG5seImrM9hcgjD1Idz_EOZJDwoudO9d6PTELMXv6gdMzm8lA3z1vTuiSljrw/exec";
-const char* scriptUrl = "https://script.google.com/macros/s/AKfycbxFQUYr70_3V211rjUAKNWNywPWm2TxhQTi7EQtfW640JutbGbK-SZjF2wSLtmsnwTh/exec";
+// const char* scriptUrl = "https://script.google.com/macros/s/AKfycbxFQUYr70_3V211rjUAKNWNywPWm2TxhQTi7EQtfW640JutbGbK-SZjF2wSLtmsnwTh/exec";
+const char* scriptUrl = "https://script.google.com/macros/s/AKfycbyC7ZqDqIWv-hdsJnuiwrIMsLN8pkMEBYLvA8XH8gLyzMSOgnhTGgzJM7IaJ_6TX5_N/exec";
+
 
 //define pin
 #define RE_CLK_PIN 2      // CLK ENCODER
@@ -72,10 +72,11 @@ int interval = 1000;
 long currentMillis2 = 0;
 long previousMillis2 = 0;
 int interval2 = 1000;
+int testtipping = 0;
 
 
 boolean ledState = LOW;
-float calibrationFactor = 4.5;
+float calibrationFactor = 9; //4.5
 volatile byte pulseCount;
 byte pulse1Sec = 0;
 float flowRate;
@@ -85,6 +86,7 @@ bool read_waterflow_allow = 0;
 bool read_pressure_allow = 0;
 float pressure;
 float max_pressure = 0;
+float bar_pressure = 0;
 
 
 void on_button_short_click() {
@@ -178,6 +180,7 @@ void lcd_connected(){
 void IRAM_ATTR pulseCounter()
 {
   pulseCount++;
+  testtipping++;
 }
 
 void setup()
@@ -228,7 +231,7 @@ void setup()
 
   data_batery = (0.00092*analogRead(V_BAT_PIN))+0.8;
   
-  if(data_batery > 4.5)data_batery = 5;
+  // if(data_batery > 4.5)data_batery = 5;
   Serial.println(data_batery);
 }
 
@@ -299,7 +302,7 @@ void display(){
     lcd.setCursor(0,3);
     lcd.print("Tekanan Air : ");
     lcd.setCursor(14,3);
-    lcd.print(max_pressure);
+    lcd.print(bar_pressure);
     
 
   }
@@ -355,6 +358,8 @@ void loop()
       Serial.println(pressure);
       Serial.print("Max pressure ADC : ");
       Serial.println(max_pressure);
+
+      bar_pressure = (max_pressure - 220) / 670; //670 didapat dari rumus persamaan (k)
 
       previousMillis2 = currentMillis2;
     }
@@ -463,7 +468,8 @@ void loop()
       http.addHeader("Content-Type", "application/json"); 
       // String json = "{\"nomer\": 1,\"pressure\": 2,\"water_flow\": 3, \"battery\": 4}"; // Ganti dengan data sensor sesuai kebutuhan. 
 
-      String json = "{\"nomer\": " + String(data_nomer) + ",\"pressure\": " + String(max_pressure) + ",\"water_flow\": " + String(totalMilliLitres) + ", \"battery\": " + String(data_batery) + ",\"water_flowP\": " + String(data_manual) + "}";
+      String json = "{\"nomer\": " + String(data_nomer) + ",\"pressure\": " + String(bar_pressure) + ",\"water_flow\": " + String(totalMilliLitres) + ", \"battery\": " + String(data_batery) + ",\"water_flowP\": " + String(data_manual) + "}";
+      // String json = "{\"nomer\": " + String(data_nomer) + ",\"pressure\": " + String(max_pressure) + ",\"water_flow\": " + "899" + ", \"battery\": " + String(data_batery) + ",\"water_flowP\": " + String(data_manual) + "}";
 
       int cnt;
       int httpResponseCode;
@@ -506,6 +512,7 @@ void loop()
     max_pressure = 0;
     data_manual = 1000;
     last_data_manual = 9999;
+    testtipping = 0;
   }
  
   // delay(50);
